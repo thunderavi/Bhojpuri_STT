@@ -1,0 +1,17 @@
+--index-url https://download.pytorch.org/whl/cu124
+
+torch==2.6.0
+torchvision==0.21.0
+torchaudio==2.6.0
+
+transformers==5.15.0
+datasets==5.0.1
+accelerate==1.14.0
+evaluate==0.4.6
+jiwer==4.0.0
+librosa==0.11.0
+soundfile==0.14.0
+faster-whisper==1.2.1
+ctranslate2==4.8.1
+pyaudio==0.2.14
+webrtcvad-wheels==2.0.14

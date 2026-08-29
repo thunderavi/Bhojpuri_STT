@@ -1,0 +1,70 @@
+# Bhojpuri ASR — .gitignore
+
+# ── Python virtual environments ───────────────────────────────────────────────
+.venv/
+.phase2-venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.corrupt
+
+# ── HuggingFace / pip caches ──────────────────────────────────────────────────
+.hf_cache/
+.pip-cache/
+.tmp/
+
+# ── Large model weights (too big for Git; use Git LFS or HF Hub instead) ──────
+models/bhojpuri-whisper-small/
+models/bhojpuri-whisper-small-full/
+models/LORAmodel/model.safetensors
+models/LORAmodel/optimizer.pt
+models/LORAmodel/rng_state.pth
+models/LORAmodel/scaler.pt
+models/LORAmodel/scheduler.pt
+models/LORAmodel/training_args.bin
+models/LORAmodel/lora-checkpoints/
+models/LORAmodel/lora-v2-checkpoints/
+models/LORAmodel/lora-adapters-best/
+models/LORAmodel/lora-merged-final/
+models/vakyansh-bhojpuri/*.pt
+models/vakyansh-bhojpuri/*.zip
+models/vakyansh-bhojpuri/lm.binary
+models/vakyansh-bhojpuri/lexicon.lst
+
+# ── Datasets (large; re-build with merge_bhojpuri_datasets.py) ────────────────
+data/
+
+# ── Outputs & audio scratch ───────────────────────────────────────────────────
+outputs/
+wav/
+
+# ── Python local runtime ──────────────────────────────────────────────────────
+python311-local/
+
+# ── LLM / Node sub-project dependencies ──────────────────────────────────────
+llm/whisperFineTune/backend/node_modules/
+
+# ── OS / editor artefacts ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.log
+
+# ── What IS tracked (whitelist model configs & reports) ───────────────────────
+# models/LORAmodel/ configs, tokenizer, WER logs
+!models/LORAmodel/config.json
+!models/LORAmodel/generation_config.json
+!models/LORAmodel/tokenizer.json
+!models/LORAmodel/tokenizer_config.json
+!models/LORAmodel/processor_config.json
+!models/LORAmodel/trainer_state.json
+!models/LORAmodel/lora_wer_report.txt
+!models/LORAmodel/lora_v2_wer_report.txt
+!models/bhojpuri-whisper-small-full/wer_report.txt
+!models/vakyansh-bhojpuri/dict.ltr.txt
+!models/vakyansh-bhojpuri/vocab.json
+!report/
