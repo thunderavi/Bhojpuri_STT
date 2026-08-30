@@ -60,6 +60,11 @@ Thumbs.db
 .vscode/
 *.log
 
+# ── Google Drive temp upload files ───────────────────────────────────────────
+*.tmp.driveupload
+*.tmp.drivedownload
+~$*
+
 # ── What IS tracked (whitelist model configs & reports) ───────────────────────
 # models/LORAmodel/ configs, tokenizer, WER logs
 !models/LORAmodel/config.json
