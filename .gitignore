@@ -44,6 +44,12 @@ python311-local/
 
 # ── LLM / Node sub-project dependencies ──────────────────────────────────────
 llm/whisperFineTune/backend/node_modules/
+llm/whisperFineTune/model.safetensors
+llm/whisperFineTune/optimizer.pt
+llm/whisperFineTune/rng_state.pth
+llm/whisperFineTune/scaler.pt
+llm/whisperFineTune/scheduler.pt
+llm/whisperFineTune/training_args.bin
 
 # ── OS / editor artefacts ─────────────────────────────────────────────────────
 .DS_Store

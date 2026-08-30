@@ -1,0 +1,22 @@
+{
+  "name": "whisper-finetune-local-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local real-time Bhojpuri Whisper backend and GUI host.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "mongodb": "^7.5.0",
+    "mysql2": "^3.23.4",
+    "pg": "^8.23.0",
+    "ws": "^8.18.3"
+  }
+}

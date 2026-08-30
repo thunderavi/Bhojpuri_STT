@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bhojpuri Whisper</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">LOCAL SPEECH WORKBENCH</p>
+          <h1>Bhojpuri Whisper</h1>
+          <p class="subhead">Speak naturally. The fine-tuned model listens on your GPU.</p>
+        </div>
+        <span id="service-status" class="status status-loading">Connecting</span>
+      </header>
+
+      <section class="panel listen-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">REAL-TIME TRANSCRIPTION</p>
+            <h2 id="listen-state">Ready to listen</h2>
+          </div>
+          <span id="model-status" class="status status-loading">Checking</span>
+        </div>
+        <canvas id="waveform" width="800" height="120" aria-label="Voice activity waveform"></canvas>
+        <div class="listen-controls">
+          <button id="toggle-listening" type="button">Start microphone</button>
+          <button id="clear-transcript" class="secondary" type="button">Clear text</button>
+          <label class="checkbox-control"><input id="save-session" type="checkbox" disabled /> Save transcript session</label>
+        </div>
+        <p id="permission-note" class="helper">Your browser will ask for microphone permission.</p>
+      </section>
+
+      <section class="panel transcript-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">TRANSCRIPT</p>
+            <h2>What you said</h2>
+          </div>
+          <span id="connection-status" class="status status-loading">Idle</span>
+        </div>
+        <div id="final-transcript" class="transcript" aria-live="polite"></div>
+        <div id="partial-transcript" class="transcript partial" aria-live="polite">Your transcript will appear here.</div>
+      </section>
+
+      <section class="panel status-panel">
+        <div class="status-grid">
+          <div><span>Device</span><strong id="device">Waiting for worker</strong></div>
+          <div><span>Language</span><strong id="language">Hindi</strong></div>
+          <div><span>Storage</span><strong id="storage">Disabled</strong></div>
+        </div>
+        <div class="history-heading">
+          <div>
+            <p class="eyebrow">SAVED SESSIONS</p>
+            <h2>Transcript history</h2>
+          </div>
+          <button id="refresh-history" class="secondary" type="button">Refresh</button>
+        </div>
+        <div id="history-list" class="history-list">Storage is disabled.</div>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

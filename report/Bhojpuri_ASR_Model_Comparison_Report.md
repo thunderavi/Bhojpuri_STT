@@ -46,10 +46,28 @@ The table below provides a holistic comparison across different architectural ap
 | **m3** | Zero-Shot | *[Need Your Number]* |
 | **Vakyansh** | Pre-trained for Indic Languages | **108.22%** |
 | **Whisper Fine-Tuned** | Full Fine-Tuning (checkpoint-14900) | **40.58%** |
-| **Whisper + LoRA** | Parameter-Efficient Fine-Tuning | **38.91% (Best)** |
+| **Whisper + LoRA v1** | PEFT, r=8, q+v only, 3,500 steps | **38.91%** |
+| **Whisper + LoRA v2** | PEFT, r=16, q+k+v+out, 2,000 steps | **38.91%** (tied v1) |
 
 > [!NOTE]
-> *I used placeholders (like `[Need Your Number]`) because I don't have the exact WER scores for m1, m2, m3, and Vakyansh in the logs I searched. If you tell me what their WER scores are, I will update the table right away!*
+> *Zero-Shot and Vakyansh model WER scores for m1, m2, m3 are pending. Whisper and LoRA numbers are confirmed from actual training runs.*
+
+---
+
+## 4. LoRA v2 Deep Dive
+
+| Metric | LoRA v1 | LoRA v2 |
+| :--- | :--- | :--- |
+| Rank | 8 | **16** |
+| Target Modules | q, v | **q, k, v, out** |
+| Learning Rate | 1e-4 | **5e-5** |
+| Steps | 3,500 | 2,000 |
+| Best Step WER | 38.86% (step 1800) | **38.88%** (step 600) |
+| Final WER | **38.91%** | **38.91%** |
+| Runtime | ~5.3h | ~8.8h |
+| Eval time/checkpoint | ~12 min | ~96 min |
+
+**Verdict:** LoRA v2 tied v1 exactly at 38.91%. The larger rank and extra modules improved early convergence (best at step 600 vs step 1,800), but the cosine scheduler decayed too quickly over 2,000 steps. Eval speed was 8x slower due to the expanded model size.
 
 ---
 

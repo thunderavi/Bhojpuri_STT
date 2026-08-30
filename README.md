@@ -182,9 +182,9 @@ After step ~1,800, WER stopped improving. The cosine learning rate scheduler dec
 **Script:** `scripts/train_lora_whisper.py` (same script, new CLI args)  
 **Run command:** `.\train_lora_v2.bat`  
 **Starting from:** `models/LORAmodel` (same base checkpoint-14900)  
-**Status:** 🟡 Ready to run
+**Status:** ✅ Complete
 
-#### LoRA v2 Configuration (Improved)
+#### LoRA v2 Configuration
 
 | Parameter | v1 | v2 | Reason for Change |
 |---|---|---|---|
@@ -193,12 +193,24 @@ After step ~1,800, WER stopped improving. The cosine learning rate scheduler dec
 | Target modules | q, v | **q, k, v, out** | All 4 attention projections → more coverage |
 | Learning rate | 1e-4 | **5e-5** | Less aggressive, avoids overshoot |
 | Warmup steps | 100 | **200** | Smoother ramp-up |
-| Max steps | 3,500 | **2,000** | Fits in ~3 hours |
+| Max steps | 3,500 | **2,000** | — |
 | Output dir | lora-checkpoints | **lora-v2-checkpoints** | v1 preserved |
 | WER log | lora_wer_report.txt | **lora_v2_wer_report.txt** | v1 log preserved |
 
-**Expected runtime:** ~3 hours  
-**Expected WER target:** ~36–38%
+#### LoRA v2 WER Results
+
+| Step | Epoch | WER |
+|------|-------|-----|
+| 600 | 0.286 | **38.88%** ← Best checkpoint |
+| 2,000 | 0.382 | 39.45% (LR fully decayed) |
+| **Final eval** | — | **38.91% ✅** |
+
+**Actual runtime:** ~8h 49min (eval took ~96 min/checkpoint vs ~12 min in v1 due to larger rank)  
+**Merged model saved to:** `models/LORAmodel/lora-v2-merged-final/`
+
+#### Why v2 Matched But Didn't Beat v1
+
+The larger rank (r=16) and expanded modules helped early (step 600 WER: 38.88%), but the cosine LR scheduler decayed to near-zero by step 2,000. The model essentially tied v1 at **38.91%**. The eval speed was also 8x slower with the larger configuration, making each eval ~96 minutes.
 
 ---
 
@@ -210,7 +222,7 @@ After step ~1,800, WER stopped improving. The cosine learning rate scheduler dec
 | Whisper-Small (zero-shot) | No Bhojpuri training | ~75%+ |
 | Whisper-Small Full Fine-Tuned | Full fine-tune, 14,900 steps | **40.58%** |
 | Whisper-Small + LoRA v1 | PEFT, r=8, q+v, 3,500 steps | **38.91%** |
-| Whisper-Small + LoRA v2 | PEFT, r=16, q+k+v+out, 2,000 steps | 🟡 *In progress* |
+| Whisper-Small + LoRA v2 | PEFT, r=16, q+k+v+out, 2,000 steps | **38.91%** (tied v1) |
 
 > **Lower WER = Better.** The Vakyansh model scores >100% WER on our test set because it was trained on a different data distribution and hallucinates extra tokens.
 
