@@ -27,6 +27,8 @@ models/LORAmodel/lora-checkpoints/
 models/LORAmodel/lora-v2-checkpoints/
 models/LORAmodel/lora-adapters-best/
 models/LORAmodel/lora-merged-final/
+models/LORAmodel/lora-v2-adapters-best/
+models/LORAmodel/lora-v2-merged-final/
 models/vakyansh-bhojpuri/*.pt
 models/vakyansh-bhojpuri/*.zip
 models/vakyansh-bhojpuri/lm.binary
