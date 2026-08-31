@@ -60,6 +60,37 @@ export class WorkerManager {
     return this.readyPromise;
   }
 
+  // ── Hot-switch model: in-process switch if alive, or clean restart ───────
+  async switchModel(newModelDir) {
+    this.status = "loading";
+    if (this.child && this.ready) {
+      try {
+        console.log(`[worker-manager] Requesting in-process model switch to: ${newModelDir}`);
+        const response = await this.request({ type: "switch_model", model_dir: newModelDir });
+        this.modelDir = newModelDir;
+        this.ready = true;
+        this.status = "ready";
+        this.device = response.device || this.device;
+        console.log(`[worker-manager] In-process model switch complete on device: ${this.device}`);
+        return response;
+      } catch (error) {
+        console.warn(`[worker-manager] In-process switch failed (${error.message}). Falling back to fresh restart...`);
+      }
+    }
+
+    // Fallback: Clean process restart
+    this.stop();
+    await new Promise((r) => setTimeout(r, 600)); // allow OS/CUDA to release VRAM
+    this.modelDir = newModelDir;
+    this.child = null;
+    this.ready = false;
+    this.status = "loading";
+    this.readyPromise = null;
+    this.queue = Promise.resolve();
+    this.pending.clear();
+    return this.start();
+  }
+
   defaultPythonPath() {
     const projectRoot = path.resolve(__dirname, "..", "..", "..");
     const projectPython = process.platform === "win32"
@@ -84,7 +115,12 @@ export class WorkerManager {
       this.ready = true;
       this.status = "ready";
       this.device = message.device || "unknown";
-      resolveReady(message);
+      if (typeof resolveReady === "function") resolveReady(message);
+      if (message.id && this.pending.has(message.id)) {
+        const pending = this.pending.get(message.id);
+        this.pending.delete(message.id);
+        pending.resolve(message);
+      }
       return;
     }
 

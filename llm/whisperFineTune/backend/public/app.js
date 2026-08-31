@@ -16,6 +16,16 @@ const partialTranscript = document.querySelector("#partial-transcript");
 const canvas = document.querySelector("#waveform");
 const canvasContext = canvas.getContext("2d");
 
+// ── Model selector elements ────────────────────────────────────────────────
+const modelSelect = document.querySelector("#model-select");
+const switchModelBtn = document.querySelector("#switch-model-btn");
+const switchStatus = document.querySelector("#switch-status");
+const activeModelLabel = document.querySelector("#active-model-label");
+const activeModelWer = document.querySelector("#active-model-wer");
+const activeModelDesc = document.querySelector("#active-model-desc");
+const currentModelName = document.querySelector("#current-model-name");
+const currentModelWer = document.querySelector("#current-model-wer");
+
 let audioContext;
 let microphoneStream;
 let microphoneSource;
@@ -33,12 +43,118 @@ let lastPartialSentSamples = 0;
 let waveformLevel = 0;
 let sessionId = null;
 let storageEnabled = false;
+let isSwitchingModel = false;
+let availableModels = [];
+let activeModelKey = null;
 
 function setStatus(element, label, kind) {
   element.textContent = label;
   element.className = `status status-${kind}`;
 }
 
+// ── Model selector logic ───────────────────────────────────────────────────
+async function loadModels() {
+  try {
+    const response = await fetch("/api/models");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    availableModels = data.models;
+    activeModelKey = data.activeModel;
+
+    // Populate dropdown
+    modelSelect.replaceChildren();
+    for (const model of availableModels) {
+      const option = document.createElement("option");
+      option.value = model.key;
+      option.textContent = `${model.label} — WER ${model.wer}${model.filesReady ? "" : " ⚠ files missing"}`;
+      option.disabled = !model.filesReady;
+      if (model.active) option.selected = true;
+      modelSelect.appendChild(option);
+    }
+    modelSelect.disabled = false;
+    switchModelBtn.disabled = false;
+
+    updateActiveModelInfo(activeModelKey);
+  } catch (error) {
+    modelSelect.replaceChildren();
+    const opt = document.createElement("option");
+    opt.textContent = "Failed to load models";
+    modelSelect.appendChild(opt);
+    console.error("Could not load models:", error);
+  }
+}
+
+function updateActiveModelInfo(modelKey) {
+  const model = availableModels.find((m) => m.key === modelKey);
+  if (!model) return;
+  activeModelKey = modelKey;
+  activeModelLabel.textContent = model.label;
+  activeModelWer.textContent = `WER ${model.wer}`;
+  activeModelDesc.textContent = model.description;
+  currentModelName.textContent = model.label;
+  currentModelWer.textContent = model.wer;
+}
+
+async function switchModel() {
+  const selectedKey = modelSelect.value;
+  if (!selectedKey || selectedKey === activeModelKey) return;
+  if (isSwitchingModel) return;
+
+  if (listening) {
+    stopListening();
+    permissionNote.textContent = "Microphone stopped while switching model.";
+  }
+
+  isSwitchingModel = true;
+  modelSelect.disabled = true;
+  switchModelBtn.disabled = true;
+  toggleButton.disabled = true;
+  switchStatus.style.display = "";
+  setStatus(switchStatus, "Switching...", "loading");
+  setStatus(modelStatus, "Loading new model", "loading");
+
+  try {
+    const response = await fetch("/api/switch-model", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modelKey: selectedKey }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || `HTTP ${response.status}`);
+    }
+
+    const result = await response.json();
+    updateActiveModelInfo(selectedKey);
+    setStatus(switchStatus, "Switched ✓", "ready");
+    setStatus(modelStatus, "GPU ready", "ready");
+    device.textContent = result.device || "GPU";
+    permissionNote.textContent = `Now using: ${result.label} (WER ${result.wer})`;
+
+    setTimeout(() => {
+      switchStatus.style.display = "none";
+    }, 3000);
+  } catch (error) {
+    setStatus(switchStatus, "Failed", "error");
+    setStatus(modelStatus, "Error", "error");
+    permissionNote.textContent = `Model switch failed: ${error.message}`;
+    console.error("Switch model error:", error);
+    // restore select to active model
+    for (const option of modelSelect.options) {
+      option.selected = option.value === activeModelKey;
+    }
+  } finally {
+    isSwitchingModel = false;
+    modelSelect.disabled = false;
+    switchModelBtn.disabled = false;
+    toggleButton.disabled = false;
+  }
+}
+
+switchModelBtn.addEventListener("click", switchModel);
+
+// ── Status polling ─────────────────────────────────────────────────────────
 async function loadStatus() {
   try {
     const response = await fetch("/api/health");
@@ -50,8 +166,17 @@ async function loadStatus() {
     storageEnabled = payload.storage.enabled && payload.storage.status === "ready";
 
     setStatus(serviceStatus, "Online", "ready");
-    setStatus(modelStatus, workerReady ? "GPU ready" : workerLoading ? "Loading" : "Unavailable", workerReady ? "ready" : workerLoading ? "loading" : "error");
-    device.textContent = workerReady ? payload.model.device : payload.model.workerStatus;
+
+    if (!isSwitchingModel) {
+      setStatus(modelStatus, workerReady ? "GPU ready" : workerLoading ? "Loading" : "Unavailable", workerReady ? "ready" : workerLoading ? "loading" : "error");
+      device.textContent = workerReady ? payload.model.device : payload.model.workerStatus;
+      if (payload.model.activeModel && payload.model.activeModel !== activeModelKey) {
+        updateActiveModelInfo(payload.model.activeModel);
+      }
+      if (payload.model.activeModelLabel) currentModelName.textContent = payload.model.activeModelLabel;
+      if (payload.model.activeModelWer) currentModelWer.textContent = payload.model.activeModelWer;
+    }
+
     language.textContent = payload.model.language;
     storage.textContent = storageEnabled ? payload.storage.provider : "Disabled";
     saveSessionCheckbox.disabled = !storageEnabled;
@@ -96,7 +221,7 @@ async function beginSession() {
   const response = await fetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "whisperFineTune", language: language.textContent, task: "transcribe" }),
+    body: JSON.stringify({ model: activeModelKey || "whisperFineTune", language: language.textContent, task: "transcribe" }),
   });
   if (!response.ok) throw new Error((await response.json()).error || "Could not create storage session.");
   sessionId = (await response.json()).id;
@@ -173,16 +298,25 @@ function flattenFrames(frames, sampleCount) {
   return samples;
 }
 
+let noiseFloor = 0.015;
+let voicedFrameCount = 0;
+let totalSpeechFrameCount = 0;
+
 function resetSpeechBuffer() {
   speechFrames = [];
   speechSamples = 0;
   silenceMilliseconds = 0;
   speechDetected = false;
   lastPartialSentSamples = 0;
+  voicedFrameCount = 0;
+  totalSpeechFrameCount = 0;
 }
 
 function sendSpeechChunk(isFinal) {
-  if (!websocket || websocket.readyState !== WebSocket.OPEN || speechSamples < sourceSampleRate * 0.35) return;
+  if (!websocket || websocket.readyState !== WebSocket.OPEN || speechSamples < sourceSampleRate * 0.45) {
+    if (isFinal) resetSpeechBuffer();
+    return;
+  }
   const allSamples = flattenFrames(speechFrames, speechSamples);
   const previewSamples = Math.round(sourceSampleRate * 4);
   const samples = isFinal ? allSamples : allSamples.subarray(Math.max(0, allSamples.length - previewSamples));
@@ -200,21 +334,32 @@ function handleAudioFrame(frame) {
   const rms = Math.sqrt(sum / frame.length);
   waveformLevel = Math.max(rms, waveformLevel * 0.86);
   const frameMilliseconds = (frame.length / sourceSampleRate) * 1000;
-  const speaking = rms > 0.018;
+
+  // Track adaptive background noise floor during silence
+  if (!speechDetected) {
+    noiseFloor = noiseFloor * 0.95 + rms * 0.05;
+  }
+
+  // Active voice detection: Speech must be significantly louder than ambient noise floor
+  const voiceThreshold = Math.max(0.040, noiseFloor * 2.6);
+  const speaking = rms > voiceThreshold;
 
   if (speaking) {
     speechDetected = true;
     silenceMilliseconds = 0;
     speechFrames.push(frame);
     speechSamples += frame.length;
+    voicedFrameCount += 1;
+    totalSpeechFrameCount += 1;
   } else if (speechDetected) {
     speechFrames.push(frame);
     speechSamples += frame.length;
+    totalSpeechFrameCount += 1;
     silenceMilliseconds += frameMilliseconds;
   }
 
   if (speechDetected && speechSamples >= sourceSampleRate * 2.4 && speechSamples - lastPartialSentSamples >= sourceSampleRate * 1.2 && !partialRequestInFlight) sendSpeechChunk(false);
-  if (speechDetected && silenceMilliseconds >= 700) sendSpeechChunk(true);
+  if (speechDetected && silenceMilliseconds >= 750) sendSpeechChunk(true);
 }
 
 function connectWebsocket() {
@@ -228,12 +373,15 @@ function connectWebsocket() {
       if (payload.type === "error") { setStatus(connectionStatus, "Error", "error"); permissionNote.textContent = payload.message; return; }
       if (payload.type === "transcript") {
         if (payload.final) {
-          if (payload.text) finalTranscript.textContent += `${finalTranscript.textContent ? " " : ""}${payload.text}`;
+          if (payload.text) {
+            const current = finalTranscript.textContent.trim();
+            finalTranscript.textContent = current ? `${current} \n${payload.text}` : payload.text;
+          }
           partialTranscript.textContent = "";
           partialRequestInFlight = false;
           setStatus(connectionStatus, "Listening", "ready");
         } else {
-          partialTranscript.textContent = payload.text || "Listening...";
+          partialTranscript.textContent = payload.text ? `... ${payload.text}` : "Listening...";
           partialRequestInFlight = false;
           setStatus(connectionStatus, "Preview", "loading");
         }
@@ -247,20 +395,45 @@ async function startListening() {
   try {
     await beginSession();
     await connectWebsocket();
-    microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    microphoneStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      }
+    });
     audioContext = new AudioContext({ sampleRate: 16000 });
     await audioContext.audioWorklet.addModule("/audio-processor.js");
     sourceSampleRate = audioContext.sampleRate;
     microphoneSource = audioContext.createMediaStreamSource(microphoneStream);
+
+    // ── Human Vocal Bandpass Filter (85 Hz to 3800 Hz) ─────────────────────
+    // Cuts out low-frequency fan hum/AC rumble (0-80 Hz) and high-frequency static (3800 Hz+)
+    const highpass = audioContext.createBiquadFilter();
+    highpass.type = "highpass";
+    highpass.frequency.value = 85;
+
+    const lowpass = audioContext.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = 3800;
+
     microphoneNode = new AudioWorkletNode(audioContext, "microphone-processor");
     muteGain = audioContext.createGain();
     muteGain.gain.value = 0;
     microphoneNode.port.onmessage = (event) => handleAudioFrame(event.data);
-    microphoneSource.connect(microphoneNode).connect(muteGain).connect(audioContext.destination);
+
+    // Connect: Mic -> Highpass -> Lowpass -> AudioWorklet -> Mute -> Destination
+    microphoneSource.connect(highpass);
+    highpass.connect(lowpass);
+    lowpass.connect(microphoneNode);
+    microphoneNode.connect(muteGain);
+    muteGain.connect(audioContext.destination);
+
     listening = true;
     toggleButton.textContent = "Stop microphone";
-    listenState.textContent = "Listening for Bhojpuri speech";
-    permissionNote.textContent = "Speak normally. Pause briefly to finish a sentence.";
+    listenState.textContent = "Listening for Bhojpuri speech (Voice Isolated)";
+    permissionNote.textContent = "Speak clearly into your microphone. Background noise is filtered.";
     setStatus(connectionStatus, "Listening", "ready");
   } catch (error) {
     await endSession();
@@ -295,6 +468,8 @@ toggleButton.addEventListener("click", () => (listening ? stopListening() : star
 clearButton.addEventListener("click", () => { finalTranscript.textContent = ""; partialTranscript.textContent = "Your transcript will appear here."; });
 refreshHistoryButton.addEventListener("click", refreshHistory);
 
+// ── Init ───────────────────────────────────────────────────────────────────
 loadStatus();
+loadModels();
 setInterval(loadStatus, 2000);
 drawWaveform();

@@ -14,10 +14,31 @@ const backendRoot = __dirname;
 
 const port = Number.parseInt(process.env.PORT || "3000", 10);
 const host = process.env.HOST || "127.0.0.1";
-const modelDir = path.resolve(backendRoot, process.env.MODEL_DIR || "..");
-const publicDir = path.join(backendRoot, "public");
 const language = process.env.LANGUAGE || "Hindi";
 const task = process.env.TASK || "transcribe";
+const publicDir = path.join(backendRoot, "public");
+
+// ── Available models registry ──────────────────────────────────────────────
+const AVAILABLE_MODELS = {
+  "full-finetune": {
+    key: "full-finetune",
+    label: "Full Fine-Tune",
+    description: "Whisper-Small fully fine-tuned on Bhojpuri (14,900 steps)",
+    wer: "40.58%",
+    dir: path.resolve(backendRoot, process.env.MODEL_DIR || ".."),
+  },
+  "lora": {
+    key: "lora",
+    label: "LoRA Fine-Tune",
+    description: "Whisper-Small + LoRA adapters merged (r=8, q+v, 3,500 steps)",
+    wer: "38.91%",
+    dir: path.resolve(backendRoot, process.env.LORA_MODEL_DIR || "../../../models/LORAmodel/lora-merged-final"),
+  },
+};
+
+let activeModelKey = "full-finetune";
+let modelDir = AVAILABLE_MODELS[activeModelKey].dir;
+
 const worker = new WorkerManager({ modelDir, language, task });
 const storage = new StorageManager();
 
@@ -27,17 +48,16 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.static(publicDir));
 
 function modelStatus() {
-  const requiredFiles = [
-    "config.json",
-    "model.safetensors",
-    "tokenizer.json",
-  ];
+  const requiredFiles = ["config.json", "model.safetensors", "tokenizer.json"];
   const missingFiles = requiredFiles.filter(
-    (fileName) => !fs.existsSync(path.join(modelDir, fileName)),
+    (fileName) => !fs.existsSync(path.join(worker.modelDir, fileName)),
   );
 
   return {
-    modelDirectory: modelDir,
+    modelDirectory: worker.modelDir,
+    activeModel: activeModelKey,
+    activeModelLabel: AVAILABLE_MODELS[activeModelKey]?.label,
+    activeModelWer: AVAILABLE_MODELS[activeModelKey]?.wer,
     ready: missingFiles.length === 0,
     missingFiles,
     device: worker.device,
@@ -58,20 +78,58 @@ function healthPayload() {
   };
 }
 
-app.get("/health", (_request, response) => {
-  response.json(healthPayload());
+app.get("/health", (_request, response) => { response.json(healthPayload()); });
+app.get("/api/health", (_request, response) => { response.json(healthPayload()); });
+app.get("/api/model-info", (_request, response) => { response.json(modelStatus()); });
+app.get("/api/storage-status", (_request, response) => { response.json(storage.snapshot()); });
+
+// ── Models list endpoint ───────────────────────────────────────────────────
+app.get("/api/models", (_request, response) => {
+  const models = Object.values(AVAILABLE_MODELS).map((m) => ({
+    key: m.key,
+    label: m.label,
+    description: m.description,
+    wer: m.wer,
+    active: m.key === activeModelKey,
+    filesReady: fs.existsSync(path.join(m.dir, "model.safetensors")),
+  }));
+  response.json({ models, activeModel: activeModelKey });
 });
 
-app.get("/api/health", (_request, response) => {
-  response.json(healthPayload());
-});
+// ── Switch model endpoint ──────────────────────────────────────────────────
+app.post("/api/switch-model", async (request, response) => {
+  const { modelKey } = request.body || {};
+  if (!modelKey || !AVAILABLE_MODELS[modelKey]) {
+    return response.status(400).json({ error: `Unknown model key: "${modelKey}". Available: ${Object.keys(AVAILABLE_MODELS).join(", ")}` });
+  }
+  if (modelKey === activeModelKey) {
+    return response.json({ ok: true, message: "Already using this model.", activeModel: activeModelKey });
+  }
 
-app.get("/api/model-info", (_request, response) => {
-  response.json(modelStatus());
-});
+  const targetModel = AVAILABLE_MODELS[modelKey];
+  if (!fs.existsSync(path.join(targetModel.dir, "model.safetensors"))) {
+    return response.status(503).json({ error: `Model files not found at: ${targetModel.dir}` });
+  }
 
-app.get("/api/storage-status", (_request, response) => {
-  response.json(storage.snapshot());
+  console.log(`[server] Switching model: ${activeModelKey} → ${modelKey}`);
+  console.log(`[server] New model dir: ${targetModel.dir}`);
+
+  try {
+    activeModelKey = modelKey;
+    await worker.switchModel(targetModel.dir);
+    console.log(`[server] Model switched successfully to ${modelKey} on ${worker.device}`);
+    response.json({
+      ok: true,
+      activeModel: activeModelKey,
+      label: targetModel.label,
+      wer: targetModel.wer,
+      device: worker.device,
+    });
+  } catch (error) {
+    console.error(`[server] Model switch failed: ${error.message}`);
+    activeModelKey = "full-finetune"; // rollback
+    response.status(500).json({ error: `Model switch failed: ${error.message}` });
+  }
 });
 
 app.post("/api/sessions", async (request, response) => {
@@ -79,7 +137,7 @@ app.post("/api/sessions", async (request, response) => {
     const session = await storage.createSession({
       language: request.body?.language,
       task: request.body?.task,
-      model: request.body?.model || "whisperFineTune",
+      model: request.body?.model || activeModelKey,
       metadata: request.body?.metadata,
     });
     response.status(201).json(session);
@@ -169,14 +227,12 @@ async function persistResult(requestPayload, result) {
 }
 
 websocketServer.on("connection", (socket) => {
-  socket.send(
-    JSON.stringify({
-      type: "connected",
-      phase: 2,
-      workerStatus: worker.status,
-      message: "WebSocket connected.",
-    }),
-  );
+  socket.send(JSON.stringify({
+    type: "connected",
+    phase: 2,
+    workerStatus: worker.status,
+    message: "WebSocket connected.",
+  }));
 
   socket.on("message", (message, isBinary) => {
     if (isBinary) {
@@ -185,10 +241,14 @@ websocketServer.on("connection", (socket) => {
         audioBase64: Buffer.from(message).toString("base64"),
         sampleRate: 16000,
       };
+      const t0 = Date.now();
       worker.request(requestPayload).then(async (result) => {
+        const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
+        console.log(`[transcribe] [${activeModelKey.toUpperCase()}] (${elapsed}s) -> "${result.text}"`);
         await persistResult(requestPayload, result);
         if (socket.readyState === 1) socket.send(JSON.stringify(result));
       }).catch((error) => {
+        console.error(`[transcribe] Error: ${error.message}`);
         if (socket.readyState === 1) socket.send(JSON.stringify({ type: "error", message: error.message }));
       });
       return;
@@ -199,10 +259,14 @@ websocketServer.on("connection", (socket) => {
       if (payload.type === "ping") {
         socket.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
       } else if (payload.type === "transcribe") {
+        const t0 = Date.now();
         worker.request(payload).then(async (result) => {
+          const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
+          console.log(`[transcribe] [${activeModelKey.toUpperCase()}] (${elapsed}s) -> "${result.text}"`);
           await persistResult(payload, result);
           if (socket.readyState === 1) socket.send(JSON.stringify(result));
         }).catch((error) => {
+          console.error(`[transcribe] Error: ${error.message}`);
           if (socket.readyState === 1) socket.send(JSON.stringify({ type: "error", message: error.message }));
         });
       }
@@ -214,9 +278,8 @@ websocketServer.on("connection", (socket) => {
 
 server.listen(port, host, () => {
   console.log(`Whisper backend running at http://${host}:${port}`);
-  console.log(`Model directory: ${modelDir}`);
-  console.log(`Model files ready: ${modelStatus().ready}`);
-  console.log("Starting persistent Whisper worker...");
+  console.log(`Active model: ${activeModelKey} → ${worker.modelDir}`);
+  console.log(`Available models: ${Object.keys(AVAILABLE_MODELS).join(", ")}`);
   worker.start().then(() => {
     console.log(`Whisper worker ready on ${worker.device}.`);
   }).catch((error) => {

@@ -17,6 +17,28 @@
         <span id="service-status" class="status status-loading">Connecting</span>
       </header>
 
+      <!-- ── Model Selector Panel ────────────────────────────────────────── -->
+      <section class="panel model-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">MODEL SELECTION</p>
+            <h2>Choose ASR Model</h2>
+          </div>
+          <span id="switch-status" class="status status-loading" style="display:none">Switching...</span>
+        </div>
+        <div class="model-selector-row">
+          <select id="model-select" class="model-select" disabled>
+            <option value="">Loading models...</option>
+          </select>
+          <button id="switch-model-btn" type="button" class="secondary" disabled>Switch Model</button>
+        </div>
+        <div id="model-info-bar" class="model-info-bar">
+          <span id="active-model-label">—</span>
+          <span class="model-wer-badge" id="active-model-wer">—</span>
+          <span id="active-model-desc" class="model-desc">—</span>
+        </div>
+      </section>
+
       <section class="panel listen-panel">
         <div class="panel-heading">
           <div>
@@ -51,6 +73,8 @@
           <div><span>Device</span><strong id="device">Waiting for worker</strong></div>
           <div><span>Language</span><strong id="language">Hindi</strong></div>
           <div><span>Storage</span><strong id="storage">Disabled</strong></div>
+          <div><span>Active Model</span><strong id="current-model-name">—</strong></div>
+          <div><span>WER</span><strong id="current-model-wer">—</strong></div>
         </div>
         <div class="history-heading">
           <div>
